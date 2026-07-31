@@ -1,0 +1,74 @@
+#!/bin/bash
+set -euo pipefail
+
+# Usage: job-history [days]
+# Shows finished/failed/cancelled jobs, not just what's currently queued
+# (that's what my-jobs is for). sacct only reports today's jobs unless you
+# give it an explicit start time, hence the [days] window below.
+
+DAYS="${1:-14}"
+
+if ! [[ "$DAYS" =~ ^[0-9]+$ ]]; then
+    echo "Usage: job-history [days]  (default: 14)"
+    exit 1
+fi
+
+raw=$(sacct -u "$USER" -S "now-${DAYS}days" -P --noheader \
+    --format=JobID,JobName%30,Partition,State,ExitCode,Elapsed,Start,ReqMem,MaxRSS,AllocCPUS,AllocTRES 2>/dev/null)
+
+if [ -z "$raw" ]; then
+    echo "No jobs found in the last $DAYS day(s) for user $USER"
+    exit 0
+fi
+
+echo "Job history for user $USER (last $DAYS day(s)):"
+echo ""
+
+echo "$raw" | awk -F'|' '
+    # MaxRSS is only ever populated on the ".batch" sub-step, never on the
+    # parent JobID row, so pull it from there and merge it back in.
+    function gpus_from_tres(t,   n, parts, i) {
+        n = split(t, parts, ",")
+        for (i = 1; i <= n; i++)
+            if (parts[i] ~ /^gres\/gpu=/) { sub(/^gres\/gpu=/, "", parts[i]); return parts[i] }
+        return "-"
+    }
+    # sacct auto-scales MaxRSS unit per row (K, M or G) once the value is
+    # large enough, so raw values are not directly comparable - normalize
+    # everything to MiB.
+    function mem_to_mib(s,   unit, num) {
+        if (s == "" || s == "-") return "-"
+        unit = substr(s, length(s), 1)
+        num = substr(s, 1, length(s) - 1) + 0
+        if (unit == "K") return sprintf("%dM", num / 1024)
+        if (unit == "M") return sprintf("%dM", num)
+        if (unit == "G") return sprintf("%dM", num * 1024)
+        return s
+    }
+    {
+        id = $1
+        if (id ~ /\.batch$/) {
+            base = id; sub(/\.batch$/, "", base)
+            if ($9 != "") maxrss[base] = mem_to_mib($9)
+            next
+        }
+        if (id ~ /\./) next  # skip other steps (.extern, .0, ...)
+
+        order[++n] = id
+        name[id] = $2; part[id] = $3; state[id] = $4; exitcode[id] = $5
+        elapsed[id] = $6; start[id] = $7
+        reqmem[id] = ($8 == "" ? "-" : $8)
+        cpus[id] = $10
+        gpus[id] = gpus_from_tres($11)
+    }
+    END {
+        printf "%-10s  %-24s  %-11s  %-10s  %-6s  %-9s  %-5s  %-5s  %-9s/%-9s  %-19s\n",
+            "JOBID", "NAME", "PARTITION", "STATE", "EXIT", "ELAPSED", "CPUS", "GPUS", "REQ-MEM", "PEAK-MEM", "START"
+        for (i = n; i >= 1; i--) {
+            id = order[i]
+            printf "%-10s  %-24s  %-11s  %-10s  %-6s  %-9s  %-5s  %-5s  %-9s/%-9s  %-19s\n",
+                id, name[id], part[id], state[id], exitcode[id], elapsed[id], cpus[id], gpus[id],
+                reqmem[id], (id in maxrss ? maxrss[id] : "-"), start[id]
+        }
+    }
+'
