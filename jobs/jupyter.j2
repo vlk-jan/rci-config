@@ -1,8 +1,11 @@
 #!/bin/bash
-#SBATCH --partition gpu
-#SBATCH --gpus-per-node 1
+#SBATCH --partition {{ partition }}
+{% if gpus > 0 -%}
+#SBATCH --gpus-per-node {{ gpus }}
+{% endif -%}
 #SBATCH --nodes 1
 #SBATCH --ntasks-per-node {{ number_of_cpus }}
+#SBATCH --mem {{ memory }}
 #SBATCH --time 1-0:00:00
 #SBATCH --job-name jupyter-{{ project_name }}
 #SBATCH --output {{ log_dir }}/jupyter-%j.log
@@ -15,8 +18,8 @@ export PYTHONPATH={{ project_dir }}:$PYTHONPATH
 export BASE_PATH="/mnt/personal/${user}/{{ project_name }}"
 
 # Paste the node name and job id to the temporary files
-echo ${node} node_file }} >{{
-echo "{{ log_dir }}/jupyter-${SLURM_JOB_ID}.log" log_file }} >{{
+echo ${node} > {{ node_file }}
+echo "{{ log_dir }}/jupyter-${SLURM_JOB_ID}.log" > {{ log_file }}
 
 # Load modules
 source {{ env_file }}

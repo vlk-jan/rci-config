@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 BASHRC_FILE="/home/$(whoami)/.bashrc"
 LOCAL_COMMANDS_DIR="$(realpath "$(dirname "${BASH_SOURCE[0]}")")/commands/local"
@@ -30,7 +31,6 @@ if grep -q "$LOCAL_COMMANDS_DIR" "$BASHRC_FILE"; then
 else
     echo "Adding local commands directory to the PATH..."
     echo "export PATH=\$PATH:$LOCAL_COMMANDS_DIR" >> "$BASHRC_FILE"
-    source "$BASHRC_FILE"
 fi
 
 echo ""
