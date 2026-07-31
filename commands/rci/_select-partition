@@ -1,7 +1,8 @@
 #!/bin/bash
 # Shared helper: dynamically list interactive-capable (fast) partitions,
-# show availability, prompt for selection, and resolve "any-gpu" / "any-cpu"
-# to the fast partition with the most idle nodes.
+# show availability (idle/total GPUs for GPU partitions, idle/total nodes
+# for CPU partitions), prompt for selection, and resolve "any-gpu" /
+# "any-cpu" to the fast partition with the most idle GPUs / nodes.
 #
 # On success, sets:
 #   $partition      - final partition name (single, for SLURM submission)
@@ -62,18 +63,33 @@ done < <(sinfo --noheader --format="%P %t %D %l %G" 2>/dev/null \
             if (t ~ /-/) { split(t, a, "-"); split(a[2], b, ":"); return a[1]*1440 + b[1]*60 + b[2] }
             split(t, b, ":"); return b[1]*60 + b[2]
         }
+        # GRES looks like "gpu:2", "gpu:a100:4" or "gpu:a100:4(S:0-1)" - the
+        # GPU count per node is always the last colon-separated field.
+        function gpus_per_node(g,   n, parts) {
+            if (g !~ /gpu:/) return 0
+            sub(/\(.*$/, "", g)
+            n = split(g, parts, ":")
+            return parts[n] + 0
+        }
         {
             p = $1; sub(/\*$/, "", p)
             state = $2; count = $3
             if (to_min($4) > 240) next
-            if (state == "idle") idle[p] += count
-            total[p] += count
+            gpn = gpus_per_node($5)
+            if (gpn > 0) is_gpu[p] = 1
+            if (state == "idle") { idle_nodes[p] += count; idle_gpus[p] += count * gpn }
+            total_nodes[p] += count; total_gpus[p] += count * gpn
             gres[p] = $5; limit[p] = $4
         }
         END {
-            for (p in total)
-                printf "  %-16s  idle=%-3d  total=%-3d  limit=%-12s  gres=%s\n",
-                    p, idle[p]+0, total[p], limit[p], gres[p]
+            for (p in total_nodes) {
+                if (is_gpu[p])
+                    printf "  %-16s  idle=%-3d gpus  total=%-3d gpus  limit=%-12s  gres=%s\n",
+                        p, idle_gpus[p]+0, total_gpus[p]+0, limit[p], gres[p]
+                else
+                    printf "  %-16s  idle=%-3d nodes  total=%-3d nodes  limit=%-12s  gres=%s\n",
+                        p, idle_nodes[p]+0, total_nodes[p]+0, limit[p], gres[p]
+            }
         }
     ' | sort)
 echo ""
