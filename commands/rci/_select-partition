@@ -87,12 +87,10 @@ done < <(sinfo --noheader --format="%P %t %D %l %G" 2>/dev/null \
         }
         END {
             for (p in total_nodes) {
-                if (is_gpu[p])
-                    printf "  %-16s  idle=%-3d gpus  total=%-3d gpus  limit=%-12s  gres=%s\n",
-                        p, idle_gpus[p]+0, total_gpus[p]+0, limit[p], gres[p]
-                else
-                    printf "  %-16s  idle=%-3d nodes  total=%-3d nodes  limit=%-12s  gres=%s\n",
-                        p, idle_nodes[p]+0, total_nodes[p]+0, limit[p], gres[p]
+                if (is_gpu[p]) { unit = "gpus"; idle_v = idle_gpus[p]; total_v = total_gpus[p] }
+                else            { unit = "nodes"; idle_v = idle_nodes[p]; total_v = total_nodes[p] }
+                printf "  %-16s  idle=%-3d %-5s  total=%-3d %-5s  limit=%-12s  gres=%s\n",
+                    p, idle_v+0, unit, total_v+0, unit, limit[p], gres[p]
             }
         }
     ' | sort)
