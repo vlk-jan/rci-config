@@ -75,9 +75,13 @@ done < <(sinfo --noheader --format="%P %t %D %l %G" 2>/dev/null \
             p = $1; sub(/\*$/, "", p)
             state = $2; count = $3
             if (to_min($4) > 240) next
+            # Strip node-state suffix markers (*, ~, #, !, %, $, @, ^) and skip
+            # nodes that are down/draining/failed - they add no usable capacity.
+            state_clean = state; sub(/[*~#!%$@^]+$/, "", state_clean)
+            if (state_clean ~ /^(down|drain|drng|fail|failg|maint)/) next
             gpn = gpus_per_node($5)
             if (gpn > 0) is_gpu[p] = 1
-            if (state == "idle") { idle_nodes[p] += count; idle_gpus[p] += count * gpn }
+            if (state_clean == "idle") { idle_nodes[p] += count; idle_gpus[p] += count * gpn }
             total_nodes[p] += count; total_gpus[p] += count * gpn
             gres[p] = $5; limit[p] = $4
         }
