@@ -80,13 +80,48 @@ Singularity images go in `/mnt/personal/<user>/singularity/<project>.sif`.
 | Command | What it does |
 |---|---|
 | `my-jobs` | Lists your queued / running SLURM jobs. |
-| `job-history [days]` | Shows finished/failed/cancelled jobs (via `sacct`) with state, exit code, elapsed time, requested vs. peak memory, and GPU count. `my-jobs` only shows what's still queued; this is for after the fact. Defaults to the last 14 days. |
+| `job-history [days] [filters]` | Shows finished/failed/cancelled jobs (via `sacct`) with state, exit code, elapsed time, requested vs. peak memory, and GPU count. `my-jobs` only shows what's still queued; this is for after the fact. Defaults to the last 14 days. Can filter by partition and/or state - see [Filtering job history](#filtering-job-history). |
 | `interactive-job` | Starts an interactive shell on a compute node. Auto-detects `.env` / `.venv` and activates it; picks from live availability; supports `any-gpu` / `any-cpu`. Remembers last settings. |
 | `connect-job` | Attaches a shell to an already-running job (`srun --overlap`). |
 | `cancel-job` | Cancels one of your jobs. |
 | `job-logs` | Finds and `tail -f`'s the log file of a running job. |
 | `run-jupyter` | Submits a Jupyter notebook as a SLURM batch job. Prints the SSH tunnel command to run locally. Remembers last settings. |
 | `submit-job` | Submits an arbitrary command (e.g. a training script) as a SLURM batch job. Run from inside the project directory - unlike the commands above, it uses `$PWD` rather than `~/projects/<name>`. See [Submitting batch jobs](#submitting-batch-jobs). |
+
+### Filtering job history
+
+`job-history` takes a day count plus any of four filters, so the usual triage questions are one
+flag away instead of a `grep` down a thousand-row table:
+
+| Flag | Meaning |
+|---|---|
+| `-p`, `--partition LIST` | show **only** these partitions |
+| `--exclude-partition LIST` | **omit** these partitions |
+| `-s`, `--state LIST` | show **only** these states |
+| `--exclude-state LIST` | **omit** these states |
+
+`LIST` is comma-separated, and each flag may be repeated. Show and omit on the *same* dimension
+are mutually exclusive (`--partition` with `--exclude-partition` is an error), but the two
+dimensions combine freely.
+
+```bash
+job-history 30 -p amdgpu                    # only amdgpu jobs
+job-history 7 -s failed,timeout             # only what went wrong
+job-history --exclude-state completed       # everything that didn't succeed
+job-history 7 -p amdgpu --exclude-state completed
+job-history 60 --exclude-partition cpu,cpufast
+```
+
+States are matched case-insensitively and accept SLURM's names, its two-letter codes, and a few
+aliases - `completed`/`cd`, `failed`/`f`, `cancelled`/`canceled`/`ca`, `running`/`r`,
+`pending`/`pd`, `timeout`/`to`, `out_of_memory`/`oom`. Both the one-`l` and two-`l` spellings of
+"cancelled" work. A state that isn't recognised is an error listing the valid names, rather than
+a silently empty table. Partition names are *not* checked up front, since a job in the window may
+sit on a partition that no longer exists; if a filter matches nothing, the output lists the
+partitions and states actually present in that window.
+
+Note that `job-history` also reports jobs that are still `PENDING` or `RUNNING`, so
+`--exclude-state pending,running` is the way to restrict it to jobs that have actually finished.
 
 ### Partition selection
 
